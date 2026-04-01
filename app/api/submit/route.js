@@ -1,27 +1,57 @@
-const express = require('express');
-const { body, validationResult } = require('express-validator');
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
 
-const router = express.Router();
+// Input validation
+function validateEmail(email) {
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return regex.test(email);
+}
 
-// Input validation middleware
-router.post('/submit', [
-    body('data').notEmpty().withMessage('Data is required').isString().withMessage('Data must be a string'),
-], (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+export async function POST(req) {
+  try {
+    const body = await req.json();
+    const { email, card_name } = body;
+
+    // Validation
+    if (!email || !validateEmail(email)) {
+      return NextResponse.json(
+        { message: "Invalid email format" },
+        { status: 400 }
+      );
     }
 
-    const inputData = req.body.data;
-    // Process inputData...
+    if (!card_name || typeof card_name !== "string") {
+      return NextResponse.json(
+        { message: "Card name is required" },
+        { status: 400 }
+      );
+    }
 
-    return res.status(200).json({ message: 'Data submitted successfully', data: inputData });
-});
+    if (card_name.trim().length === 0 || card_name.length > 200) {
+      return NextResponse.json(
+        { message: "Card name must be between 1 and 200 characters" },
+        { status: 400 }
+      );
+    }
 
-// Error handling middleware
-router.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ message: 'Internal Server Error' });
-});
+    // Database insertion
+    const result = await db.query(
+      "INSERT INTO submissions(user_email, card_name, status) VALUES($1, $2, $3) RETURNING id",
+      [email.toLowerCase(), card_name.trim(), "pending"]
+    );
 
-module.exports = router;
+    return NextResponse.json(
+      {
+        message: "Card submitted successfully",
+        submission_id: result.rows[0].id,
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("Submit error:", error);
+    return NextResponse.json(
+      { message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
